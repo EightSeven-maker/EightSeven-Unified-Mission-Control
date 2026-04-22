@@ -117,42 +117,21 @@ export async function refreshAgentStatus(): Promise<AgentInfo[]> {
 
 async function checkJarvisStatus(): Promise<AgentStatus> {
   try {
-    // Try a lightweight gateway call to check if Jarvis is responsive
-    const result = await gatewayCall<{ status?: string }>(
-      "system.health",
-      {},
-      5000
-    );
-    return result?.status === "ok" ? "online" : "offline";
+    // Try CLI - if openclaw command works, agent is online
+    const { execSync } = await import("child_process");
+    execSync("openclaw --version", { stdio: "ignore" });
+    return "online";
   } catch {
-    // If gateway call fails, try a simpler health check
-    try {
-      const sessions = await gatewayCall<{ count?: number }>(
-        "sessions.list",
-        { limit: 1 },
-        5000
-      );
-      return sessions !== undefined ? "online" : "offline";
-    } catch {
-      return "offline";
-    }
+    return "offline";
   }
 }
 
 async function checkHarveyStatus(): Promise<AgentStatus> {
-  // Check OpenRouter API for Harvey (like Jarvis uses OpenClaw Gateway)
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
-    return "offline";
-  }
+  // Harvey uses same OpenClaw - if CLI works, Harvey is available
   try {
-    // Use OpenRouter API to check if Harvey is available
-    const result = await gatewayCall<{ status?: string }>(
-      "agent.health",
-      { agentId: "harvey" },
-      5000
-    );
-    return result?.status === "ok" ? "online" : "offline";
+    const { execSync } = await import("child_process");
+    execSync("openclaw --version", { stdio: "ignore" });
+    return "online";
   } catch {
     return "offline";
   }
