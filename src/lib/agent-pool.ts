@@ -53,20 +53,20 @@ export interface AgentPoolConfig {
 const JARVIS_INFO: AgentInfo = {
   id: "jarvis",
   name: "Jarvis",
-  description: "OpenClaw Gateway agent — all tasks, projects, code, research, files, chat, and automation",
-  capabilities: ["code", "research", "files", "gateway", "chat", "tasks", "projects", "quick-reply", "telegram"],
-  status: "unknown",
-  requiresApproval: true, // Quality Gate - Jarvis needs approval before completing tasks
+  description: "OpenClaw Gateway agent — code, research, files, and automation",
+  capabilities: ["code", "research", "files", "gateway", "chat", "tasks", "projects", "quick-reply"],
+  status: "online", // Always online since gateway is running
+  requiresApproval: true,
   metrics: { totalTokens: 0, totalCost: 0, tasksCompleted: 0, tasksInProgress: 0 },
 };
 
 const HARVEY_INFO: AgentInfo = {
   id: "harvey",
   name: "Harvey",
-  description: "OpenRouter agent — strategy, research, quality control, and quick replies (CSQO)",
+  description: "Strategy agent — code, research, quality control",
   capabilities: ["code", "research", "files", "gateway", "chat", "tasks", "projects", "quick-reply"],
-  status: "unknown",
-  requiresApproval: true, // Quality Gate - Harvey needs approval before completing tasks
+  status: "online", // Always online since gateway is running
+  requiresApproval: true,
   metrics: { totalTokens: 0, totalCost: 0, tasksCompleted: 0, tasksInProgress: 0 },
 };
 
@@ -96,16 +96,13 @@ export function findAgentsByCapability(capability: AgentCapability): AgentInfo[]
 }
 
 /**
- * Get agent status — pings each agent to determine availability
+ * Get agent status — already set to online in definitions
  */
 export async function refreshAgentStatus(): Promise<AgentInfo[]> {
-  // Both agents use OpenClaw Gateway which is definitely running
   cachedAgents = cachedAgents.map((agent) => ({
     ...agent,
-    status: "online" as AgentStatus,
     lastActive: Date.now(),
   }));
-
   return [...cachedAgents];
 }
 
