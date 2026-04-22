@@ -18,7 +18,9 @@ export type AgentCapability =
   | "gateway"
   | "chat"
   | "quick-reply"
-  | "telegram";
+  | "telegram"
+  | "tasks"
+  | "projects";
 
 export type AgentStatus = "online" | "offline" | "busy" | "unknown";
 
