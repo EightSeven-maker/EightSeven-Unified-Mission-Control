@@ -116,10 +116,10 @@ export async function refreshAgentStatus(): Promise<AgentInfo[]> {
 }
 
 async function checkJarvisStatus(): Promise<AgentStatus> {
+  // Simply check if openclaw gateway process is running
+  const { execSync } = await import("child_process");
   try {
-    // Try CLI - if openclaw command works, agent is online
-    const { execSync } = await import("child_process");
-    execSync("openclaw --version", { stdio: "ignore" });
+    execSync("pgrep -f openclaw-gateway", { stdio: "ignore" });
     return "online";
   } catch {
     return "offline";
@@ -127,10 +127,10 @@ async function checkJarvisStatus(): Promise<AgentStatus> {
 }
 
 async function checkHarveyStatus(): Promise<AgentStatus> {
-  // Harvey uses same OpenClaw - if CLI works, Harvey is available
+  // Harvey uses same OpenClaw - check if gateway process is running
+  const { execSync } = await import("child_process");
   try {
-    const { execSync } = await import("child_process");
-    execSync("openclaw --version", { stdio: "ignore" });
+    execSync("pgrep -f openclaw-gateway", { stdio: "ignore" });
     return "online";
   } catch {
     return "offline";
