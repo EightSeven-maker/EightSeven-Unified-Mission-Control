@@ -636,6 +636,70 @@ export async function GET() {
       });
     }
 
+    // ── Agent Pool Fallback ──────────────────────────────────────────────────
+    // Augment the agents list with entries from the agent-pool API for any
+    // agents that exist in the pool but not in the OpenClaw gateway config.
+    // This makes Harvey and other pool-only agents visible in the dashboard.
+    const knownIds = new Set(agents.map((a) => a.id));
+    try {
+      const poolRes = await fetch(
+        `http://127.0.0.1:${process.env.PORT || 3333}/api/agent-pool`,
+        { cache: "no-store" }
+      ).catch(() => null);
+
+      if (poolRes?.ok) {
+        const poolJson = (await poolRes.json()) as {
+          agents: Array<{
+            id: string;
+            name: string;
+            description: string;
+            capabilities: string[];
+            status: string;
+            lastActive: number;
+          }>;
+        };
+        for (const poolAgent of poolJson.agents || []) {
+          if (knownIds.has(poolAgent.id)) continue;
+          if (poolAgent.id === "main") continue; // skip synthetic duplicates
+
+          const fiveMinAgo = now - 5 * 60 * 1000;
+          const status: AgentFull["status"] =
+            poolAgent.lastActive > fiveMinAgo ? "active" : "idle";
+
+          // Map pool capabilities to channels/bindings
+          const caps = poolAgent.capabilities || [];
+          const channels = caps.includes("telegram") ? ["telegram"] : [];
+          const bindings = caps.includes("telegram") ? ["telegram"] : [];
+
+          agents.push({
+            id: poolAgent.id,
+            name: poolAgent.name,
+            emoji: poolAgent.id === "harvey" ? "🎯" : "🤖",
+            model: defaultPrimary,
+            fallbackModels: defaultFallbacks,
+            workspace: join(getOpenClawHome(), `workspace-${poolAgent.id}`),
+            agentDir: join(OPENCLAW_HOME, "agents", poolAgent.id, "agent"),
+            isDefault: false,
+            sessionCount: 0,
+            lastActive: poolAgent.lastActive || null,
+            totalTokens: 0,
+            bindings,
+            channels,
+            identitySnippet: poolAgent.description || null,
+            identityTheme: null,
+            identityAvatar: null,
+            identitySource: null,
+            skills: null,
+            subagents: [],
+            runtimeSubagents: [],
+            status,
+          });
+        }
+      }
+    } catch {
+      // Agent-pool augmentation is best-effort — don't fail the whole endpoint
+    }
+
     // Get owner info from IDENTITY.md of the default workspace
     let ownerName: string | null = null;
     try {
