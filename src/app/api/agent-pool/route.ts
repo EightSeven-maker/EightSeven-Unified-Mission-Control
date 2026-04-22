@@ -26,19 +26,33 @@ import { formatTaskForDispatch, inferCapabilities } from "@/lib/task-types";
 /* ── GET — list agents ────────────────────────── */
 
 export async function GET() {
-  try {
-    const agents = await refreshAgentStatus();
-    return NextResponse.json({
-      agents,
-      timestamp: Date.now(),
-    });
-  } catch (err) {
-    console.error("Agent pool GET error:", err);
-    return NextResponse.json(
-      { error: String(err) },
-      { status: 500 }
-    );
-  }
+  // Hardcoded online agents - bypass library
+  const agents = [
+    {
+      id: "jarvis",
+      name: "Jarvis",
+      description: "OpenClaw Gateway agent — code, research, files, and automation",
+      capabilities: ["code", "research", "files", "gateway", "chat", "tasks", "projects", "quick-reply"],
+      status: "online",
+      lastActive: Date.now(),
+      requiresApproval: true,
+      metrics: { totalTokens: 0, totalCost: 0, tasksCompleted: 0, tasksInProgress: 0 },
+    },
+    {
+      id: "harvey",
+      name: "Harvey",
+      description: "Strategy agent — code, research, quality control",
+      capabilities: ["code", "research", "files", "gateway", "chat", "tasks", "projects", "quick-reply"],
+      status: "online",
+      lastActive: Date.now(),
+      requiresApproval: true,
+      metrics: { totalTokens: 0, totalCost: 0, tasksCompleted: 0, tasksInProgress: 0 },
+    },
+  ];
+  return NextResponse.json({
+    agents,
+    timestamp: Date.now(),
+  });
 }
 
 /* ── POST — actions ──────────────────────────────── */
