@@ -5,7 +5,6 @@
  * including their capabilities, status, and routing configuration.
  */
 
-import { isHermesReachable, getHermesStatus, type HermesStatus } from "./hermes-api";
 import { gatewayCall } from "./openclaw";
 
 // ── Types ─────────────────────────────────────────────
@@ -62,8 +61,8 @@ const JARVIS_INFO: AgentInfo = {
 const HARVEY_INFO: AgentInfo = {
   id: "harvey",
   name: "Harvey",
-  description: "Telegram agent — all tasks, projects, code, research, chat, and quick replies",
-  capabilities: ["code", "research", "files", "gateway", "chat", "tasks", "projects", "quick-reply", "telegram"],
+  description: "OpenRouter agent — strategy, research, quality control, and quick replies (CSQO)",
+  capabilities: ["code", "research", "files", "gateway", "chat", "tasks", "projects", "quick-reply"],
   status: "unknown",
   requiresApproval: true, // Quality Gate - Harvey needs approval before completing tasks
   metrics: { totalTokens: 0, totalCost: 0, tasksCompleted: 0, tasksInProgress: 0 },
@@ -139,23 +138,19 @@ async function checkJarvisStatus(): Promise<AgentStatus> {
 }
 
 async function checkHarveyStatus(): Promise<AgentStatus> {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN;
-  if (!botToken) {
+  // Check OpenRouter API for Harvey (like Jarvis uses OpenClaw Gateway)
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) {
     return "offline";
   }
   try {
-    const reachable = await isHermesReachable(botToken);
-    if (!reachable) return "offline";
-
-    // Also try to get more detailed status
-    const chatId = process.env.HERMES_CHAT_ID
-      ? Number(process.env.HERMES_CHAT_ID)
-      : undefined;
-    if (chatId) {
-      const status = await getHermesStatus(botToken, chatId);
-      return status.online ? "online" : "offline";
-    }
-    return "online";
+    // Use OpenRouter API to check if Harvey is available
+    const result = await gatewayCall<{ status?: string }>(
+      "agent.health",
+      { agentId: "harvey" },
+      5000
+    );
+    return result?.status === "ok" ? "online" : "offline";
   } catch {
     return "offline";
   }
@@ -352,7 +347,7 @@ export async function dispatchToAgent<T = unknown>(options: DispatchOptions): Pr
   }
 
   if (agentId === "harvey") {
-    return dispatchToHarvey<T>({ message });
+    return dispatchToHarvey<T>({ taskId: options.taskId, message: options.message, sessionKey: options.sessionKey });
   }
 
   throw new Error(`Unknown agent: ${agentId}`);
@@ -386,31 +381,31 @@ async function dispatchToJarvis<T>(opts: {
 }
 
 async function dispatchToHarvey<T>(opts: {
+  taskId: number;
   message: string;
+  sessionKey?: string;
 }): Promise<T> {
-  const { botToken, chatId } = getHermesConfig();
+  const idempotencyKey = `task-${opts.taskId}-${Date.now()}`;
+  const sessionKey = opts.sessionKey || `task-${opts.taskId}`;
 
-  if (!botToken) {
-    throw new Error("TELEGRAM_BOT_TOKEN not configured");
-  }
+  // Harvey uses same OpenClaw Gateway with harvey agentId
+  const result = await gatewayCall<T>(
+    "agent",
+    {
+      agentId: "harvey", // Dedicated Harvey agent
+      message: opts.message,
+      sessionKey,
+      idempotencyKey,
+      inputProvenance: {
+        kind: "external_user",
+        sourceChannel: "mission-control",
+        sourceTool: "task-dispatch",
+      },
+    },
+    300000 // 5 min timeout for task execution
+  );
 
-  const numericChatId = chatId ? Number(chatId) : await getMyChatId(botToken);
-  const { sendMessage } = await import("./hermes-api");
-
-  const result = await sendMessage(botToken, numericChatId, opts.message);
-  return result as T;
-}
-
-function getHermesConfig(): { botToken: string; chatId: string } {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN || "";
-  const chatId = process.env.HERMES_CHAT_ID || "";
-  return { botToken, chatId };
-}
-
-async function getMyChatId(botToken: string): Promise<number> {
-  const { getMe } = await import("./hermes-api");
-  const me = await getMe(botToken);
-  return me.id;
+  return result;
 }
 
 // ── Agent Metrics ─────────────────────────────────
@@ -491,5 +486,3 @@ export function setQualityGate(agentId: AgentId, enabled: boolean): void {
 }
 
 // ── Exports ─────────────────────────────────────
-
-export type { HermesStatus };
