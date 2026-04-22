@@ -541,13 +541,10 @@ export function Sidebar() {
           ) : (
             <div className="space-y-3">
               <div className="flex items-center gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-base shadow-sm ring-1 ring-stone-200 dark:bg-[#171a1d] dark:ring-[#2c343d]">
-                  🦞
-                </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-xs font-bold tracking-tight text-stone-900 dark:text-[#f5f7fa]">
-                      Mission Control
+                      87 Command Center
                     </span>
                     {commitHash && (
                       <span className="shrink-0 rounded-full bg-stone-100 px-1.5 py-0.5 text-xs font-mono font-medium text-stone-500 dark:bg-[#171a1d] dark:text-[#7a8591]">

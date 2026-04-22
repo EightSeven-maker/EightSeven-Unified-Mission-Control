@@ -31,35 +31,24 @@ const isHosted =
 export const metadata: Metadata = {
   title: isHosted
     ? "Your AI Agent — AgentBay"
-    : "Mission Control — OpenClaw GUI Dashboard for Local AI Agents",
+    : "87 Command Center",
   description: isHosted
     ? "Chat with and manage your AI agent from one dashboard in AgentBay."
-    : "Mission Control is the open-source OpenClaw GUI and AI agent dashboard. " +
-      "Monitor, chat with, and manage your local AI agents, models, cron jobs, " +
-      "vector memory, and skills — all from a single local AI management tool " +
-      "that runs entirely on your machine.",
+    : "87 Command Center — unified multi-agent task routing system",
   keywords: [
-    "OpenClaw GUI",
+    "87 Command Center",
     "AI agent dashboard",
-    "local AI management tool",
-    "OpenClaw dashboard",
-    "AI agent manager",
-    "local AI assistant",
-    "OpenClaw Mission Control",
+    "multi-agent system",
+    "task routing",
+    "OpenClaw GUI",
     "self-hosted AI dashboard",
     "AI agent monitoring",
-    "open source AI GUI",
-    "AI model management",
-    "AI cron jobs",
-    "vector memory dashboard",
-    "LLM management tool",
-    "private AI",
   ],
   manifest: isHosted ? undefined : "/manifest.json",
-  applicationName: isHosted ? "AgentBay" : "Mission Control",
-  authors: [{ name: "OpenClaw" }],
-  creator: "OpenClaw",
-  publisher: "OpenClaw",
+  applicationName: isHosted ? "AgentBay" : "87 Command Center",
+  authors: [{ name: "87" }],
+  creator: "87",
+  publisher: "87",
   category: "technology",
   openGraph: {
     type: "website",
