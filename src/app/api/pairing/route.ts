@@ -1,0 +1,289 @@
+import { NextRequest, NextResponse } from "next/server";
+import { gatewayCall, parseJsonFromCliOutput, runCli, runCliCaptureBoth } from "@/lib/openclaw";
+import { getOpenClawHome } from "@/lib/paths";
+import { readdir, readFile } from "fs/promises";
+import { join } from "path";
+
+export const dynamic = "force-dynamic";
+
+/* ── Types ────────────────────────────────────────── */
+
+type DmRequest = {
+  channel: string;
+  code: string;
+  account?: string;
+  senderId?: string;
+  senderName?: string;
+  message?: string;
+  createdAt?: string;
+  expiresAt?: string;
+  [key: string]: unknown;
+};
+
+type DeviceRequest = {
+  requestId: string;
+  deviceId?: string;
+  displayName?: string;
+  platform?: string;
+  clientId?: string;
+  clientMode?: string;
+  role?: string;
+  roles?: string[];
+  createdAtMs?: number;
+  [key: string]: unknown;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function toIsoString(value: unknown): string | undefined {
+  if (typeof value === "string" && value.trim()) return value;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return new Date(value).toISOString();
+  }
+  return undefined;
+}
+
+function normalizeDmRequests(raw: unknown, fallbackChannel?: string): DmRequest[] {
+  const out: DmRequest[] = [];
+  const topLevelChannel =
+    isRecord(raw) && typeof raw.channel === "string" && raw.channel.trim()
+      ? raw.channel.trim()
+      : undefined;
+  const pushRequest = (entry: unknown, localFallbackChannel?: string) => {
+    if (!isRecord(entry)) return;
+    const codeRaw = entry.code ?? entry.pairingCode;
+    const code = typeof codeRaw === "string" ? codeRaw.trim() : "";
+    if (!code) return;
+
+    const channelRaw =
+      entry.channel ??
+      entry.transport ??
+      localFallbackChannel ??
+      fallbackChannel ??
+      topLevelChannel;
+    const channel = typeof channelRaw === "string" ? channelRaw.trim() : "";
+    if (!channel) return;
+
+    const meta = isRecord(entry.meta) ? entry.meta : {};
+    const senderName =
+      (typeof entry.senderName === "string" && entry.senderName.trim()) ||
+      [meta.firstName, meta.lastName].filter((v): v is string => typeof v === "string" && v.trim().length > 0).join(" ") ||
+      (typeof meta.username === "string" ? meta.username : undefined);
+    const senderId =
+      (typeof entry.senderId === "string" && entry.senderId.trim()) ||
+      (typeof entry.id === "string" && entry.id.trim()) ||
+      (typeof meta.username === "string" ? meta.username : undefined);
+    const account =
+      (typeof entry.accountId === "string" && entry.accountId.trim()) ||
+      (typeof entry.account === "string" && entry.account.trim()) ||
+      (typeof meta.accountId === "string" && meta.accountId.trim()) ||
+      undefined;
+
+    out.push({
+      ...entry,
+      channel,
+      code,
+      account,
+      senderName,
+      senderId,
+      message: typeof entry.message === "string" ? entry.message : undefined,
+      createdAt: toIsoString(entry.createdAt) ?? toIsoString(entry.createdAtMs),
+      expiresAt: toIsoString(entry.expiresAt) ?? toIsoString(entry.expiresAtMs),
+    });
+  };
+
+  if (Array.isArray(raw)) {
+    for (const entry of raw) pushRequest(entry);
+    return out;
+  }
+
+  if (!isRecord(raw)) return out;
+
+  // Common payload shapes across OpenClaw versions.
+  const listCandidates: unknown[] = [
+    raw.requests,
+    raw.pending,
+    raw.dm,
+    raw.items,
+  ];
+  for (const candidate of listCandidates) {
+    for (const entry of asArray(candidate)) pushRequest(entry, topLevelChannel);
+  }
+
+  // Nested buckets: { pending: { dm: [...] } } etc.
+  for (const bucketKey of ["pending", "result", "data"] as const) {
+    const bucket = raw[bucketKey];
+    if (!isRecord(bucket)) continue;
+    const bucketChannel =
+      typeof bucket.channel === "string" && bucket.channel.trim()
+        ? bucket.channel.trim()
+        : topLevelChannel;
+    for (const nestedKey of ["requests", "dm", "items"] as const) {
+      for (const entry of asArray(bucket[nestedKey])) pushRequest(entry, bucketChannel);
+    }
+  }
+
+  // Single request object fallback.
+  pushRequest(raw);
+
+  return out;
+}
+
+function dedupeDmRequests(requests: DmRequest[]): DmRequest[] {
+  const seen = new Set<string>();
+  const out: DmRequest[] = [];
+  for (const req of requests) {
+    const key = `${req.channel}::${req.account || "default"}::${req.code}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(req);
+  }
+  return out;
+}
+
+async function listDmRequestsFromCli(): Promise<DmRequest[]> {
+  const result = await runCliCaptureBoth(["pairing", "list", "--json"], 10000);
+  if (result.code !== 0) {
+    const detail = String(result.stderr || result.stdout || "").trim();
+    throw new Error(detail || `pairing list exited with code ${result.code}`);
+  }
+  const payload = parseJsonFromCliOutput<unknown>(result.stdout, "openclaw pairing list --json");
+  return dedupeDmRequests(normalizeDmRequests(payload));
+}
+
+/* ── GET: list all pending requests ──────────────── */
+
+export async function GET() {
+  const home = getOpenClawHome();
+  let dmRequests: DmRequest[] = [];
+  const deviceRequests: DeviceRequest[] = [];
+
+  // 1) Preferred: ask OpenClaw CLI directly (supports account-aware pairing).
+  try {
+    dmRequests = await listDmRequestsFromCli();
+  } catch {
+    // 2) Fallback: scan credentials pairing files for older/limited environments.
+    const scanned: DmRequest[] = [];
+    const credDirs = [join(home, "credentials")];
+    for (const credDir of credDirs) {
+      try {
+        const files = await readdir(credDir);
+        const pairingFiles = files.filter((f) => f.endsWith("-pairing.json"));
+        for (const file of pairingFiles) {
+          const channel = file.replace("-pairing.json", "");
+          try {
+            const raw = await readFile(join(credDir, file), "utf-8");
+            const data = JSON.parse(raw) as unknown;
+            scanned.push(...normalizeDmRequests(data, channel));
+          } catch {
+            // File may be empty or malformed
+          }
+        }
+      } catch {
+        // credentials dir may not exist
+      }
+    }
+    dmRequests = dedupeDmRequests(scanned);
+  }
+
+  // 2. Device pairing requests
+  try {
+    const data = await gatewayCall<{
+      pending: DeviceRequest[];
+      paired: unknown[];
+    }>("device.pair.list", {}, 8000);
+    deviceRequests.push(...(data.pending || []));
+  } catch {
+    // gateway may be unavailable
+  }
+
+  const body = {
+    dm: dmRequests,
+    devices: deviceRequests,
+    total: dmRequests.length + deviceRequests.length,
+  };
+  return NextResponse.json(body, {
+    headers: {
+      "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+      Pragma: "no-cache",
+    },
+  });
+}
+
+/* ── POST: approve / reject ──────────────────────── */
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const action = body.action as string;
+
+    switch (action) {
+      case "approve-dm": {
+        const channel = body.channel as string;
+        const code = body.code as string;
+        const account = body.account as string | undefined;
+        if (!channel || !code) {
+          return NextResponse.json(
+            { error: "channel and code required" },
+            { status: 400 }
+          );
+        }
+        const args = ["pairing", "approve", channel, code];
+        if (account && account.trim()) args.push("--account", account.trim());
+        args.push("--notify");
+        const output = await runCli(
+          args,
+          10000
+        );
+        return NextResponse.json({ ok: true, action, channel, code, account, output });
+      }
+
+      case "approve-device": {
+        const requestId = body.requestId as string;
+        if (!requestId) {
+          return NextResponse.json(
+            { error: "requestId required" },
+            { status: 400 }
+          );
+        }
+        const result = await gatewayCall<Record<string, unknown>>(
+          "device.pair.approve",
+          { requestId },
+          10000,
+        );
+        return NextResponse.json({ ok: true, action, requestId, result });
+      }
+
+      case "reject-device": {
+        const requestId = body.requestId as string;
+        if (!requestId) {
+          return NextResponse.json(
+            { error: "requestId required" },
+            { status: 400 }
+          );
+        }
+        const result = await gatewayCall<Record<string, unknown>>(
+          "device.pair.reject",
+          { requestId },
+          10000,
+        );
+        return NextResponse.json({ ok: true, action, requestId, result });
+      }
+
+      default:
+        return NextResponse.json(
+          { error: `Unknown action: ${action}` },
+          { status: 400 }
+        );
+    }
+  } catch (err) {
+    console.error("Pairing API POST error:", err);
+    return NextResponse.json({ error: String(err) }, { status: 500 });
+  }
+}
