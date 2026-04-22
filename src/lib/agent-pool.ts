@@ -23,6 +23,13 @@ export type AgentCapability =
 
 export type AgentStatus = "online" | "offline" | "busy" | "unknown";
 
+export interface AgentMetrics {
+  totalTokens: number;
+  totalCost: number;
+  tasksCompleted: number;
+  tasksInProgress: number;
+}
+
 export interface AgentInfo {
   id: AgentId;
   name: string;
@@ -30,6 +37,8 @@ export interface AgentInfo {
   capabilities: AgentCapability[];
   status: AgentStatus;
   lastActive?: number;
+  metrics?: AgentMetrics;
+  requiresApproval?: boolean; // Quality Gate
   metadata?: Record<string, unknown>;
 }
 
@@ -43,17 +52,21 @@ export interface AgentPoolConfig {
 const JARVIS_INFO: AgentInfo = {
   id: "jarvis",
   name: "Jarvis",
-  description: "OpenClaw Gateway agent — code, research, files, and automation",
-  capabilities: ["code", "research", "files", "gateway", "chat"],
+  description: "OpenClaw Gateway agent — all tasks, projects, code, research, files, chat, and automation",
+  capabilities: ["code", "research", "files", "gateway", "chat", "tasks", "projects", "quick-reply", "telegram"],
   status: "unknown",
+  requiresApproval: true, // Quality Gate - Jarvis needs approval before completing tasks
+  metrics: { totalTokens: 0, totalCost: 0, tasksCompleted: 0, tasksInProgress: 0 },
 };
 
 const HARVEY_INFO: AgentInfo = {
   id: "harvey",
   name: "Harvey",
-  description: "Hermes Telegram agent — quick replies and conversational tasks",
-  capabilities: ["chat", "quick-reply", "telegram"],
+  description: "Telegram agent — all tasks, projects, code, research, chat, and quick replies",
+  capabilities: ["code", "research", "files", "gateway", "chat", "tasks", "projects", "quick-reply", "telegram"],
   status: "unknown",
+  requiresApproval: true, // Quality Gate - Harvey needs approval before completing tasks
+  metrics: { totalTokens: 0, totalCost: 0, tasksCompleted: 0, tasksInProgress: 0 },
 };
 
 // ── Registry ─────────────────────────────────────────
@@ -398,6 +411,83 @@ async function getMyChatId(botToken: string): Promise<number> {
   const { getMe } = await import("./hermes-api");
   const me = await getMe(botToken);
   return me.id;
+}
+
+// ── Agent Metrics ─────────────────────────────────
+
+/**
+ * Record task completion and update agent metrics
+ */
+export function recordTaskCompletion(agentId: AgentId, tokens: number, cost: number): void {
+  cachedAgents = cachedAgents.map((agent) => {
+    if (agent.id === agentId && agent.metrics) {
+      return {
+        ...agent,
+        metrics: {
+          totalTokens: agent.metrics.totalTokens + tokens,
+          totalCost: agent.metrics.totalCost + cost,
+          tasksCompleted: agent.metrics.tasksCompleted + 1,
+          tasksInProgress: Math.max(0, agent.metrics.tasksInProgress - 1),
+        },
+      };
+    }
+    return agent;
+  });
+}
+
+/**
+ * Record task started
+ */
+export function recordTaskStarted(agentId: AgentId): void {
+  cachedAgents = cachedAgents.map((agent) => {
+    if (agent.id === agentId && agent.metrics) {
+      return {
+        ...agent,
+        metrics: {
+          ...agent.metrics,
+          tasksInProgress: agent.metrics.tasksInProgress + 1,
+        },
+      };
+    }
+    return agent;
+  });
+}
+
+/**
+ * Get agent metrics
+ */
+export function getAgentMetrics(agentId: AgentId): AgentMetrics | undefined {
+  const agent = cachedAgents.find((a) => a.id === agentId);
+  return agent?.metrics;
+}
+
+/**
+ * Get all agents with their metrics
+ */
+export function getAgentsWithMetrics(): AgentInfo[] {
+  return [...cachedAgents];
+}
+
+// ── Quality Gates ─────────────────────────────────
+
+/**
+ * Check if agent requires approval (Quality Gate)
+ */
+export function requiresApproval(agentId: AgentId): boolean {
+  const agent = cachedAgents.find((a) => a.id === agentId);
+  return agent?.requiresApproval ?? false;
+}
+
+/**
+ * Toggle quality gate for an agent
+ */
+export function setQualityGate(agentId: AgentId, enabled: boolean): void {
+  cachedAgents = cachedAgents.map((agent) => {
+    if (agent.id === agentId) {
+      return { ...agent, requiresApproval: enabled };
+    }
+    return agent;
+  });
 }
 
 // ── Exports ─────────────────────────────────────

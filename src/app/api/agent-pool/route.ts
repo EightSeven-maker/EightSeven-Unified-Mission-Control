@@ -11,9 +11,12 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   getAllAgents,
   getAgent,
+  getAgentsWithMetrics,
   refreshAgentStatus,
   routeTask,
   dispatchToAgent,
+  requiresApproval,
+  setQualityGate,
   type AgentId,
   type RouteRequest,
   type DispatchOptions,
