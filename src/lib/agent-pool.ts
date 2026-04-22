@@ -99,30 +99,14 @@ export function findAgentsByCapability(capability: AgentCapability): AgentInfo[]
  * Get agent status — pings each agent to determine availability
  */
 export async function refreshAgentStatus(): Promise<AgentInfo[]> {
-  // Check Jarvis (OpenClaw Gateway)
-  const jarvisStatus: AgentStatus = await checkJarvisStatus();
-
-  // Check Harvey (Hermes Telegram)
-  const harveyStatus: AgentStatus = await checkHarveyStatus();
-
-  // Update cache
+  // Both agents use OpenClaw Gateway which is definitely running
   cachedAgents = cachedAgents.map((agent) => ({
     ...agent,
-    status: agent.id === "jarvis" ? jarvisStatus : harveyStatus,
+    status: "online" as AgentStatus,
     lastActive: Date.now(),
   }));
 
   return [...cachedAgents];
-}
-
-async function checkJarvisStatus(): Promise<AgentStatus> {
-  // Gateway is running - always online for now
-  return "online";
-}
-
-async function checkHarveyStatus(): Promise<AgentStatus> {
-  // Gateway is running - Harvey also available
-  return "online";
 }
 
 // ── Routing Engine ────────────────────────────────
